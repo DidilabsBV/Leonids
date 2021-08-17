@@ -3,8 +3,8 @@ package com.plattysoft.leonids;
 import android.animation.Animator;
 import android.animation.Animator.AnimatorListener;
 import android.animation.ValueAnimator;
-import android.animation.ValueAnimator.AnimatorUpdateListener;
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.AnimationDrawable;
@@ -29,6 +29,7 @@ import com.plattysoft.leonids.modifiers.ParticleModifier;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.Timer;
@@ -40,26 +41,37 @@ public class ParticleSystem {
     private final ArrayList<Particle> mActiveParticles = new ArrayList<>();
     private final ParticleTimerTask mTimerTask = new ParticleTimerTask(this);
     private ViewGroup mParentView;
-    private int mMaxParticles;
-    private Random mRandom;
+    private final int mMaxParticles;
+    private final Random mRandom;
     private ParticleField mDrawingView;
-    private ArrayList<Particle> mParticles;
-    private long mTimeToLive;
+    private final List<Particle> mParticles;
+    private final long mTimeToLive;
     private long mCurrentTime = 0;
     private float mParticlesPerMillisecond;
     private int mActivatedParticles;
     private long mEmittingTime;
-    private List<ParticleModifier> mModifiers;
-    private List<ParticleInitializer> mInitializers;
+    private final List<ParticleModifier> mModifiers;
+    private final List<ParticleInitializer> mInitializers;
     private ValueAnimator mAnimator;
     private Timer mTimer;
-    private float mDpToPxScale;
-    private int[] mParentLocation;
+    private final float mDpToPxScale;
+    private final int[] mParentLocation;
 
     private int mEmitterXMin;
     private int mEmitterXMax;
     private int mEmitterYMin;
     private int mEmitterYMax;
+
+    private final Random random = new Random();
+
+    /**
+     * Sets the frames per second of <em>ALL</em> ParticleSystems
+     *
+     * @param fps the desired frames per second
+     */
+    public static void setFPS(double fps) {
+        TIMER_TASK_INTERVAL = Math.round(1000 / fps);
+    }
 
     /**
      * Creates a particle system with the given parameters
@@ -70,7 +82,19 @@ public class ParticleSystem {
      * @param timeToLive    The time to live for the particles
      */
     public ParticleSystem(Activity a, int maxParticles, int drawableResId, long timeToLive) {
-        this(a, maxParticles, a.getResources().getDrawable(drawableResId), timeToLive, android.R.id.content);
+        this(a, maxParticles, new int[]{drawableResId}, timeToLive, android.R.id.content);
+    }
+
+    /**
+     * Creates a particle system with the given parameters
+     *
+     * @param a              The parent activity
+     * @param maxParticles   The maximum number of particles
+     * @param drawableResIds The drawable resources to use as particles (supports Bitmaps and Animations)
+     * @param timeToLive     The time to live for the particles
+     */
+    public ParticleSystem(Activity a, int maxParticles, int[] drawableResIds, long timeToLive) {
+        this(a, maxParticles, drawableResIds, timeToLive, android.R.id.content);
     }
 
     /**
@@ -78,11 +102,11 @@ public class ParticleSystem {
      *
      * @param a            The parent activity
      * @param maxParticles The maximum number of particles
-     * @param drawable     The drawable to use as particle (supports Bitmaps and Animations)
+     * @param drawables    The drawables to use as particles (supports Bitmaps and Animations)
      * @param timeToLive   The time to live for the particles
      */
-    public ParticleSystem(Activity a, int maxParticles, Drawable drawable, long timeToLive) {
-        this(a, maxParticles, drawable, timeToLive, android.R.id.content);
+    public ParticleSystem(Activity a, int maxParticles, Drawable[] drawables, long timeToLive) {
+        this(a, maxParticles, drawables, timeToLive, android.R.id.content);
     }
 
     /**
@@ -90,11 +114,11 @@ public class ParticleSystem {
      *
      * @param a            The parent activity
      * @param maxParticles The maximum number of particles
-     * @param bitmap       The bitmap to use as particle
+     * @param bitmaps      The bitmaps to use as particles
      * @param timeToLive   The time to live for the particles
      */
-    public ParticleSystem(Activity a, int maxParticles, Bitmap bitmap, long timeToLive) {
-        this(a, maxParticles, bitmap, timeToLive, android.R.id.content);
+    public ParticleSystem(Activity a, int maxParticles, Bitmap[] bitmaps, long timeToLive) {
+        this(a, maxParticles, bitmaps, timeToLive, android.R.id.content);
     }
 
     /**
@@ -102,11 +126,11 @@ public class ParticleSystem {
      *
      * @param a            The parent activity
      * @param maxParticles The maximum number of particles
-     * @param animation    The animation to use as particle
+     * @param animations   The animations to use as particles
      * @param timeToLive   The time to live for the particles
      */
-    public ParticleSystem(Activity a, int maxParticles, AnimationDrawable animation, long timeToLive) {
-        this(a, maxParticles, animation, timeToLive, android.R.id.content);
+    public ParticleSystem(Activity a, int maxParticles, AnimationDrawable[] animations, long timeToLive) {
+        this(a, maxParticles, animations, timeToLive, android.R.id.content);
     }
 
     /**
@@ -119,7 +143,20 @@ public class ParticleSystem {
      * @param parentViewId  The view Id for the parent of the particle system
      */
     public ParticleSystem(Activity a, int maxParticles, int drawableResId, long timeToLive, int parentViewId) {
-        this(a, maxParticles, a.getResources().getDrawable(drawableResId), timeToLive, parentViewId);
+        this((ViewGroup) a.findViewById(parentViewId), maxParticles, new int[]{drawableResId}, timeToLive);
+    }
+
+    /**
+     * Creates a particle system with the given parameters
+     *
+     * @param a              The parent activity
+     * @param maxParticles   The maximum number of particles
+     * @param drawableResIds The drawable resources to use as particles (supports Bitmaps and Animations)
+     * @param timeToLive     The time to live for the particles
+     * @param parentViewId   The view Id for the parent of the particle system
+     */
+    public ParticleSystem(Activity a, int maxParticles, int[] drawableResIds, long timeToLive, int parentViewId) {
+        this((ViewGroup) a.findViewById(parentViewId), maxParticles, drawableResIds, timeToLive);
     }
 
     /**
@@ -127,12 +164,12 @@ public class ParticleSystem {
      *
      * @param a            The parent activity
      * @param maxParticles The maximum number of particles
-     * @param drawable     The drawable to use as particle (supports Bitmaps and Animations)
+     * @param drawables    The drawables to use as particles (supports Bitmaps and Animations)
      * @param timeToLive   The time to live for the particles
      * @param parentViewId The view Id for the parent of the particle system
      */
-    public ParticleSystem(Activity a, int maxParticles, Drawable drawable, long timeToLive, int parentViewId) {
-        this((ViewGroup) a.findViewById(parentViewId), maxParticles, drawable, timeToLive);
+    public ParticleSystem(Activity a, int maxParticles, Drawable[] drawables, long timeToLive, int parentViewId) {
+        this((ViewGroup) a.findViewById(parentViewId), maxParticles, drawables, timeToLive);
     }
 
     /**
@@ -140,13 +177,15 @@ public class ParticleSystem {
      *
      * @param a            The parent activity
      * @param maxParticles The maximum number of particles
-     * @param bitmap       The bitmap to use as particle
+     * @param bitmaps      The bitmaps to use as particles
      * @param timeToLive   The time to live for the particles
      * @param parentViewId The view Id for the parent of the particle system
      */
-    public ParticleSystem(Activity a, int maxParticles, Bitmap bitmap, long timeToLive, int parentViewId) {
+    public ParticleSystem(Activity a, int maxParticles, Bitmap[] bitmaps, long timeToLive, int parentViewId) {
         this((ViewGroup) a.findViewById(parentViewId), maxParticles, timeToLive);
         for (int i = 0; i < mMaxParticles; i++) {
+            int randomIndex = random.nextInt(bitmaps.length);
+            Bitmap bitmap = bitmaps[randomIndex];
             mParticles.add(new Particle(bitmap));
         }
     }
@@ -156,14 +195,16 @@ public class ParticleSystem {
      *
      * @param a            The parent activity
      * @param maxParticles The maximum number of particles
-     * @param animation    The animation to use as particle
+     * @param animations   The animations to use as particles
      * @param timeToLive   The time to live for the particles
      * @param parentViewId The view Id for the parent of the particle system
      */
-    public ParticleSystem(Activity a, int maxParticles, AnimationDrawable animation, long timeToLive, int parentViewId) {
+    public ParticleSystem(Activity a, int maxParticles, AnimationDrawable[] animations, long timeToLive, int parentViewId) {
         this((ViewGroup) a.findViewById(parentViewId), maxParticles, timeToLive);
         // Create the particles
         for (int i = 0; i < mMaxParticles; i++) {
+            int randomIndex = random.nextInt(animations.length);
+            AnimationDrawable animation = animations[randomIndex];
             mParticles.add(new AnimatedParticle(animation));
         }
     }
@@ -177,40 +218,34 @@ public class ParticleSystem {
      * @param timeToLive    The time to live for the particles
      */
     public ParticleSystem(ViewGroup parentView, int maxParticles, int drawableResId, long timeToLive) {
-        this(parentView, maxParticles, parentView.getResources().getDrawable(drawableResId), timeToLive);
+        this(parentView, maxParticles, timeToLive);
+        setParticles(maxParticles, getDrawables(parentView.getContext(), new int[]{drawableResId}));
+    }
+
+    /**
+     * Creates a particle system with the given parameters
+     *
+     * @param parentView     The parent view group
+     * @param drawableResIds The drawable resources to use as particles
+     * @param maxParticles   The maximum number of particles
+     * @param timeToLive     The time to live for the particles
+     */
+    public ParticleSystem(ViewGroup parentView, int maxParticles, int[] drawableResIds, long timeToLive) {
+        this(parentView, maxParticles, timeToLive);
+        setParticles(maxParticles, getDrawables(parentView.getContext(), drawableResIds));
     }
 
     /**
      * Creates a particle system with the given parameters
      *
      * @param parentView   The parent view group
-     * @param drawable     The drawable to use as a particle
+     * @param drawables    The drawables to use as particles
      * @param maxParticles The maximum number of particles
      * @param timeToLive   The time to live for the particles
      */
-    public ParticleSystem(ViewGroup parentView, int maxParticles, Drawable drawable, long timeToLive) {
+    public ParticleSystem(ViewGroup parentView, int maxParticles, Drawable[] drawables, long timeToLive) {
         this(parentView, maxParticles, timeToLive);
-
-        if (drawable instanceof AnimationDrawable) {
-            AnimationDrawable animation = (AnimationDrawable) drawable;
-            for (int i = 0; i < mMaxParticles; i++) {
-                mParticles.add(new AnimatedParticle(animation));
-            }
-        } else {
-            Bitmap bitmap;
-            if (drawable instanceof BitmapDrawable) {
-                bitmap = ((BitmapDrawable) drawable).getBitmap();
-            } else {
-                bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(),
-                        drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
-                Canvas canvas = new Canvas(bitmap);
-                drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
-                drawable.draw(canvas);
-            }
-            for (int i = 0; i < mMaxParticles; i++) {
-                mParticles.add(new Particle(bitmap));
-            }
-        }
+        setParticles(maxParticles, drawables);
     }
 
     private ParticleSystem(ViewGroup parentView, int maxParticles, long timeToLive) {
@@ -230,19 +265,6 @@ public class ParticleSystem {
 
         DisplayMetrics displayMetrics = parentView.getContext().getResources().getDisplayMetrics();
         mDpToPxScale = (displayMetrics.xdpi / DisplayMetrics.DENSITY_DEFAULT);
-    }
-
-    /**
-     * Sets the frames per second of <em>ALL</em> ParticleSystems
-     *
-     * @param fps the desired frames per second
-     */
-    public static void setFPS(double fps) {
-        TIMER_TASK_INTERVAL = Math.round(1000 / fps);
-    }
-
-    public float dpToPx(float dp) {
-        return dp * mDpToPxScale;
     }
 
     /**
@@ -421,7 +443,7 @@ public class ParticleSystem {
      * Configures a fade out for the particles when they disappear
      *
      * @param millisecondsBeforeEnd fade out duration in milliseconds
-     * @param interpolator         the interpolator for the fade out (default is linear)
+     * @param interpolator          the interpolator for the fade out (default is linear)
      */
     public ParticleSystem setFadeOut(long millisecondsBeforeEnd, Interpolator interpolator) {
         mModifiers.add(new AlphaModifier(255, 0, mTimeToLive - millisecondsBeforeEnd, mTimeToLive, interpolator));
@@ -449,6 +471,16 @@ public class ParticleSystem {
         emitWithGravity(emitter, Gravity.CENTER, particlesPerSecond, emittingTime);
     }
 
+    public void emit(int emitterX, int emitterY, int particlesPerSecond, int emittingTime) {
+        configureEmitter(emitterX, emitterY);
+        startEmitting(particlesPerSecond, emittingTime);
+    }
+
+    public void emit(int emitterX, int emitterY, int particlesPerSecond) {
+        configureEmitter(emitterX, emitterY);
+        startEmitting(particlesPerSecond);
+    }
+
     /**
      * Starts emitting particles from a specific view. If at some point the number goes over the amount of particles availabe on create
      * no new particles will be created
@@ -461,13 +493,17 @@ public class ParticleSystem {
         emitWithGravity(emitter, Gravity.CENTER, particlesPerSecond);
     }
 
-    public void emit(int emitterX, int emitterY, int particlesPerSecond, int emittingTime) {
-        configureEmitter(emitterX, emitterY);
-        startEmitting(particlesPerSecond, emittingTime);
-    }
-
-    public void emit(int emitterX, int emitterY, int particlesPerSecond) {
-        configureEmitter(emitterX, emitterY);
+    /**
+     * Starts emitting particles from a specific view. If at some point the number goes over the amount of particles availabe on create
+     * no new particles will be created
+     *
+     * @param emitter            View from which center the particles will be emited
+     * @param gravity            Which position among the view the emission takes place
+     * @param particlesPerSecond Number of particles per second that will be emited (evenly distributed)
+     */
+    public void emitWithGravity(View emitter, int gravity, int particlesPerSecond) {
+        // Setup emitter
+        configureEmitter(emitter, gravity);
         startEmitting(particlesPerSecond);
     }
 
@@ -484,20 +520,6 @@ public class ParticleSystem {
         // Setup emitter
         configureEmitter(emitter, gravity);
         startEmitting(particlesPerSecond, emittingTime);
-    }
-
-    /**
-     * Starts emitting particles from a specific view. If at some point the number goes over the amount of particles availabe on create
-     * no new particles will be created
-     *
-     * @param emitter            View from which center the particles will be emited
-     * @param gravity            Which position among the view the emission takes place
-     * @param particlesPerSecond Number of particles per second that will be emited (evenly distributed)
-     */
-    public void emitWithGravity(View emitter, int gravity, int particlesPerSecond) {
-        // Setup emitter
-        configureEmitter(emitter, gravity);
-        startEmitting(particlesPerSecond);
     }
 
     private void startEmitting(int particlesPerSecond) {
@@ -614,10 +636,63 @@ public class ParticleSystem {
         startAnimator(interpolator, mTimeToLive);
     }
 
+    /**
+     * Stops emitting new particles, but will draw the existing ones until their timeToLive expire
+     * For an cancellation and stop drawing of the particles, use cancel instead.
+     */
+    public void stopEmitting() {
+        // The time to be emitting is the current time (as if it was a time-limited emitter
+        mEmittingTime = mCurrentTime;
+    }
+
+    /**
+     * Cancels the particle system and all the animations.
+     * To stop emitting but animate until the end, use stopEmitting instead.
+     */
+    public void cancel() {
+        if (mAnimator != null && mAnimator.isRunning()) {
+            mAnimator.cancel();
+        }
+        if (mTimer != null) {
+            mTimer.cancel();
+            mTimer.purge();
+            cleanupAnimation();
+        }
+    }
+
+    private void setParticles(int maxParticles, Drawable[] drawables) {
+        for (Drawable drawable : drawables) {
+            if (drawable instanceof AnimationDrawable) {
+                AnimationDrawable animation = (AnimationDrawable) drawable;
+                mParticles.add(new AnimatedParticle(animation));
+            } else {
+                Bitmap bitmap;
+                if (drawable instanceof BitmapDrawable) {
+                    bitmap = ((BitmapDrawable) drawable).getBitmap();
+                } else {
+                    bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(),
+                            drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
+                    Canvas canvas = new Canvas(bitmap);
+                    drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+                    drawable.draw(canvas);
+                }
+                mParticles.add(new Particle(bitmap));
+            }
+        }
+
+        for (int i = 0; i < maxParticles / drawables.length; i++) {
+            mParticles.addAll(new ArrayList<>(mParticles));
+        }
+        mParticles.addAll(new ArrayList<>(mParticles).subList(0, maxParticles % drawables.length));
+
+        Collections.shuffle(mParticles);
+    }
+
+
     private void startAnimator(Interpolator interpolator, long animnationTime) {
         mAnimator = ValueAnimator.ofInt(0, (int) animnationTime);
         mAnimator.setDuration(animnationTime);
-        mAnimator.addUpdateListener(new AnimatorUpdateListener() {
+        mAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
             public void onAnimationUpdate(ValueAnimator animation) {
                 int milliseconds = (Integer) animation.getAnimatedValue();
@@ -647,8 +722,50 @@ public class ParticleSystem {
         mAnimator.start();
     }
 
+    private void updateParticlesBeforeStartTime(int particlesPerSecond) {
+        if (particlesPerSecond == 0) {
+            return;
+        }
+        long currentTimeInMs = mCurrentTime / 1000;
+        long framesCount = currentTimeInMs / particlesPerSecond;
+        if (framesCount == 0) {
+            return;
+        }
+        long frameTimeInMs = mCurrentTime / framesCount;
+        for (int i = 1; i <= framesCount; i++) {
+            onUpdate(frameTimeInMs * i + 1);
+        }
+    }
+
     private boolean hasGravity(int gravity, int gravityToCheck) {
         return (gravity & gravityToCheck) == gravityToCheck;
+    }
+
+    private void onUpdate(long milliseconds) {
+        while (((mEmittingTime > 0 && milliseconds < mEmittingTime) || mEmittingTime == -1) && // This point should emit
+                !mParticles.isEmpty() && // We have particles in the pool
+                mActivatedParticles < mParticlesPerMillisecond * milliseconds) { // and we are under the number of particles that should be launched
+            // Activate a new particle
+            activateParticle(milliseconds);
+        }
+        synchronized (mActiveParticles) {
+            for (int i = 0; i < mActiveParticles.size(); i++) {
+                boolean active = mActiveParticles.get(i).update(milliseconds);
+                if (!active) {
+                    Particle p = mActiveParticles.remove(i);
+                    i--; // Needed to keep the index at the right position
+                    mParticles.add(p);
+                }
+            }
+        }
+        mDrawingView.postInvalidate();
+    }
+
+    private void cleanupAnimation() {
+        mParentView.removeView(mDrawingView);
+        mDrawingView = null;
+        mParentView.postInvalidate();
+        mParticles.addAll(mActiveParticles);
     }
 
     private void activateParticle(long delay) {
@@ -677,70 +794,16 @@ public class ParticleSystem {
         }
     }
 
-    private void onUpdate(long miliseconds) {
-        while (((mEmittingTime > 0 && miliseconds < mEmittingTime) || mEmittingTime == -1) && // This point should emit
-                !mParticles.isEmpty() && // We have particles in the pool
-                mActivatedParticles < mParticlesPerMillisecond * miliseconds) { // and we are under the number of particles that should be launched
-            // Activate a new particle
-            activateParticle(miliseconds);
+    private Drawable[] getDrawables(Context context, int[] drawableResIds) {
+        Drawable[] drawables = new Drawable[drawableResIds.length];
+        for (int i = 0; i < drawableResIds.length; i++) {
+            drawables[i] = context.getResources().getDrawable(drawableResIds[i]);
         }
-        synchronized (mActiveParticles) {
-            for (int i = 0; i < mActiveParticles.size(); i++) {
-                boolean active = mActiveParticles.get(i).update(miliseconds);
-                if (!active) {
-                    Particle p = mActiveParticles.remove(i);
-                    i--; // Needed to keep the index at the right position
-                    mParticles.add(p);
-                }
-            }
-        }
-        mDrawingView.postInvalidate();
+        return drawables;
     }
 
-    private void cleanupAnimation() {
-        mParentView.removeView(mDrawingView);
-        mDrawingView = null;
-        mParentView.postInvalidate();
-        mParticles.addAll(mActiveParticles);
-    }
-
-    /**
-     * Stops emitting new particles, but will draw the existing ones until their timeToLive expire
-     * For an cancellation and stop drawing of the particles, use cancel instead.
-     */
-    public void stopEmitting() {
-        // The time to be emitting is the current time (as if it was a time-limited emitter
-        mEmittingTime = mCurrentTime;
-    }
-
-    /**
-     * Cancels the particle system and all the animations.
-     * To stop emitting but animate until the end, use stopEmitting instead.
-     */
-    public void cancel() {
-        if (mAnimator != null && mAnimator.isRunning()) {
-            mAnimator.cancel();
-        }
-        if (mTimer != null) {
-            mTimer.cancel();
-            mTimer.purge();
-            cleanupAnimation();
-        }
-    }
-
-    private void updateParticlesBeforeStartTime(int particlesPerSecond) {
-        if (particlesPerSecond == 0) {
-            return;
-        }
-        long currentTimeInMs = mCurrentTime / 1000;
-        long framesCount = currentTimeInMs / particlesPerSecond;
-        if (framesCount == 0) {
-            return;
-        }
-        long frameTimeInMs = mCurrentTime / framesCount;
-        for (int i = 1; i <= framesCount; i++) {
-            onUpdate(frameTimeInMs * i + 1);
-        }
+    private float dpToPx(float dp) {
+        return dp * mDpToPxScale;
     }
 
     private static class ParticleTimerTask extends TimerTask {
